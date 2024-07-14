@@ -204,16 +204,21 @@ def channel_subscription(call: types.CallbackQuery):
 def check_subscription(call: types.CallbackQuery):
     user_id = call.from_user.id
     public_link = "_".join(call.data.split("_")[1:])
-    if user_is_subscribed_to_channel(user_id=user_id, public_link=public_link):
-        database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
-        database.increase_task_done_times(public_link=public_link)
-        database.reward_user_for_subscription(user_id=user_id)
-        ru_text = f"Вам начислено {config.SUBSCRIPTION_REWARD} $TOKEN!"
-        en_text = f"You got {config.TASK_REWARD} $TOKEN!"
-        send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
+    if not database.was_rewarded_for_subscription(user_id=user_id):
+        if user_is_subscribed_to_channel(user_id=user_id, public_link=public_link):
+            database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
+            database.increase_task_done_times(public_link=public_link)
+            database.reward_user_for_subscription(user_id=user_id)
+            ru_text = f"Вам начислено {config.SUBSCRIPTION_REWARD} $TOKEN!"
+            en_text = f"You got {config.TASK_REWARD} $TOKEN!"
+            send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
+        else:
+            ru_text = f"Вы не подписались на канал."
+            en_text = f"You didn't subscribed to the channel."
+            send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
     else:
-        ru_text = f"Вы не подписались на канал."
-        en_text = f"You didn't subscribed to the channel."
+        ru_text = f"Вы уже получили награду."
+        en_text = f"You already got the reward."
         send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
 
 
