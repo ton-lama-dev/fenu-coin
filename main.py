@@ -12,7 +12,7 @@ import config
 from config import CHANNEL, ADMINS, TOKEN
 
 
-bot = telebot.TeleBot(token=TOKEN)
+bot = telebot.TeleBot(token=TOKEN, skip_pending=True)
 
 
 admin_states = {}
@@ -137,7 +137,7 @@ def callback_check_default_subscription(call):
     language = database.get_language(user_id=user_id)
     user_is_subscribed = is_subscribed_default(user_id=user_id)
     if user_is_subscribed:
-        image = open('images/welcome.jpg', 'rb')
+        image = open(f'images/welcome_{language}.jpg', 'rb')
         caption = "Кратко о проекте, приветственное сообщение"
         bot.send_photo(chat_id=user_id, photo=image, caption=caption, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
     else:
@@ -154,9 +154,16 @@ def cmd_start(message: types.Message):
     else:
         referrers[user_id] = None
     if not database.is_user_in_db(user_id=user_id):
+        ask_to_choose_language(user_id=user_id)
+        return
+    if not is_subscribed_default(user_id=user_id):
+        ask_to_subscribe(user_id=user_id)
+        return
+    language = database.get_language(user_id=user_id)
+    if not database.is_user_in_db(user_id=user_id):
         language = ask_to_choose_language(user_id=user_id)
     else:
-        image = "images/welcome.jpg"
+        image = f"images/welcome_{language}.jpg"
         ru_caption = "Кратко о проекте, приветственное сообщение"
         en_caption = "Briefly about the project, welcome message"
         send_message_by_language(user_id=user_id, ru_message=ru_caption, en_message=en_caption, image=image)
@@ -180,7 +187,7 @@ def cmd_tasks(message: types.Message):
         button = InlineKeyboardButton(channel_name, callback_data=f"channel_{task}")
         inline_markup.add(button)
 
-    image = open("images/tasks.jpg", "rb")
+    image = open(f"images/tasks_{language}.jpg", "rb")
     ru_text = f"За выполнение каждого задания вы получите {config.TASK_REWARD} $TOKEN"
     en_text = f"You got {config.TASK_REWARD} $TOKEN for each task"
     bot.send_photo(chat_id=user_id, photo=image, caption=ru_text if language == "ru" else en_text, reply_markup=inline_markup)
@@ -204,7 +211,7 @@ def channel_subscription(call: types.CallbackQuery):
 def check_subscription(call: types.CallbackQuery):
     user_id = call.from_user.id
     public_link = "_".join(call.data.split("_")[1:])
-    if not database.was_rewarded_for_subscription(user_id=user_id):
+    if not database.was_rewarded_for_subscription(user_id=user_id, public_link=public_link):
         if user_is_subscribed_to_channel(user_id=user_id, public_link=public_link):
             database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
             database.increase_task_done_times(public_link=public_link)
@@ -232,10 +239,10 @@ def cmd_balance(message: types.Message):
         ask_to_subscribe(user_id=user_id)
         return
     language = database.get_language(user_id=user_id)
-    image = open("images/welcome.jpg", "rb")
+    image = open(f"images/welcome_{language}.jpg", "rb")
     balance = database.get_balance(user_id=user_id)
     referrals = database.get_referrals(user_id=user_id)
-    referral_link = "https://t.me/bipbopbupbot?start=" + str(user_id)
+    referral_link = "https://t.me/neuromining_bot?start=" + str(user_id)
     markup = types.InlineKeyboardMarkup()
     button = types.InlineKeyboardButton(text='Пригласить друзей' if language == 'ru' else "Invite friends", switch_inline_query=referral_link)
     markup.add(button)
@@ -283,9 +290,10 @@ def cmd_wallet(message: types.Message):
     language = database.get_language(user_id=user_id)
     wallet = database.get_wallet(user_id=user_id)
     text = f"Ваш кошелек: {wallet}\nВам нужно привязать НЕкастодиальный кошелек сети TON -  рекомендуем Tonkeeper\Tonhub\MyTonWallet" if language == "ru" else f"Your wallet: {wallet}\nYou have to connect a non-custodial wallet of TON - we recommend Tonkeeper\Tonhub\MyTonWallet"
-    image = open('images/wallet.jpg', 'rb')
+    image = open(f"images/wallet_{language}.jpg", "rb")
     markup = types.InlineKeyboardMarkup()
-    add_wallet_button = types.InlineKeyboardButton('Привязать кошелек' if language == "ru" else "Connect wallet", callback_data='add_wallet')
+    add_wallet_button = types.InlineKeyboardButton('Привязать кошелек' if language == "ru" 
+                                                   else "Connect wallet", callback_data='add_wallet')
     markup.add(add_wallet_button)
     bot.send_photo(chat_id=user_id, photo=image, caption=text, reply_markup=markup)
 
@@ -302,7 +310,16 @@ def callback_add_wallet(call):
 @bot.message_handler(func=lambda message: message.text in markups.info_commands)
 def cmd_info(message: types.Message):
     user_id = message.from_user.id
-    cmd_start(message=message)
+    if not database.is_user_in_db(user_id=user_id):
+        ask_to_choose_language(user_id=user_id)
+        return
+    if not is_subscribed_default(user_id=user_id):
+        ask_to_subscribe(user_id=user_id)
+        return
+    language = database.get_language(user_id=user_id)
+    text = f"Инфо, нужен текст" if language == "ru" else f"Info, needs text"
+    image = open(f"images/info_{language}.jpg", "rb")
+    bot.send_photo(chat_id=user_id, photo=image, caption=text, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
 
 
 @bot.message_handler(commands=["admin"])
