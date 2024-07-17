@@ -39,11 +39,12 @@ def is_subscribed_default(user_id):
 
 def ask_to_subscribe(user_id):
     inline_markup = types.InlineKeyboardMarkup()
+    language = database.get_language(user_id=user_id)
     URL = f"https://t.me/{CHANNEL[1:]}"
     inline_subscribe_button = types.InlineKeyboardButton(text="Подписаться", url=URL)
-    inline_check_button = types.InlineKeyboardButton(text="Проверить", callback_data="callback_check_default_subscription")
+    inline_check_button = types.InlineKeyboardButton(text="Проверить" if language == "ru" else "Check", callback_data="callback_check_default_subscription")
     inline_markup.add(inline_subscribe_button, inline_check_button)
-    bot.send_message(user_id, f"Пожалуйста, подпишитесь на канал {config.CHANNEL} чтобы продолжить использование бота.", reply_markup=inline_markup)
+    bot.send_message(user_id, f"Пожалуйста, подпишитесь на канал {config.CHANNEL} чтобы продолжить использование бота." if language == "ru" else f"Please, subscribe to the channel {config.CHANNEL} to continue", reply_markup=inline_markup)
 
 
 def ask_to_choose_language(user_id):
@@ -103,12 +104,12 @@ def add_channel(user_id):
 
 def send_reward_to_referrer(referrer_id):
     database.send_reward_to_referrer(referrer_id=referrer_id)
-    text = f"Кто-то присоединился к боту по вашей ссылке. Вам начислено {config.REFERRAL_REWARD} $TOKEN!"
+    text = f"Кто-то присоединился к боту по вашей ссылке. Вам начислено {config.REFERRAL_REWARD} $NEMR!"
     bot.send_message(chat_id=referrer_id, text=text)
 
 
 @bot.callback_query_handler(func=lambda call: call.data in ["set_ru", "set_en"])
-def callback_set_language(call):
+def callback_set_language(call: types.CallbackQuery):
     user_id = call.from_user.id
     language = call.data[-2:]
     referrer = None
@@ -123,8 +124,8 @@ def callback_set_language(call):
         database.add_user_into_db(user_id=user_id, language=language, referrer=referrer)
     else:
         database.add_user_into_db(user_id=user_id, language=language)
-    ru_text = "Вам начислен приветственный бонус в размере 1000 $TOKEN"
-    en_text = "You got a welcome bonus of 1000 $TOKEN"
+    ru_text = "Вам начислен приветственный бонус в размере 1000 $NEMR"
+    en_text = "You got a welcome bonus of 1000 $NEMR"
     send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
     if not is_subscribed_default(user_id=user_id):
         ask_to_subscribe(user_id=user_id)
@@ -188,8 +189,8 @@ def cmd_tasks(message: types.Message):
         inline_markup.add(button)
 
     image = open(f"images/tasks_{language}.jpg", "rb")
-    ru_text = f"За выполнение каждого задания вы получите {config.TASK_REWARD} $TOKEN"
-    en_text = f"You got {config.TASK_REWARD} $TOKEN for each task"
+    ru_text = f"За выполнение каждого задания вы получаете наш токен $NEMR\n\nЧем больше заданий вы выполните, тем больше токенов будет на вашем балансе!"
+    en_text = f"For completing each task, you receive our $NEMR token.\n\nThe more tasks you complete, the more tokens you will have on your balance!"
     bot.send_photo(chat_id=user_id, photo=image, caption=ru_text if language == "ru" else en_text, reply_markup=inline_markup)
 
 
@@ -216,8 +217,8 @@ def check_subscription(call: types.CallbackQuery):
             database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
             database.increase_task_done_times(public_link=public_link)
             database.reward_user_for_subscription(user_id=user_id)
-            ru_text = f"Вам начислено {config.SUBSCRIPTION_REWARD} $TOKEN!"
-            en_text = f"You got {config.TASK_REWARD} $TOKEN!"
+            ru_text = f"Вам начислено {config.SUBSCRIPTION_REWARD} $NEMR!"
+            en_text = f"You got {config.TASK_REWARD} $NEMR!"
             send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
         else:
             ru_text = f"Вы не подписались на канал."
@@ -239,14 +240,14 @@ def cmd_balance(message: types.Message):
         ask_to_subscribe(user_id=user_id)
         return
     language = database.get_language(user_id=user_id)
-    image = open(f"images/welcome_{language}.jpg", "rb")
+    image = open(f"images/balance_{language}.jpg", "rb")
     balance = database.get_balance(user_id=user_id)
     referrals = database.get_referrals(user_id=user_id)
     referral_link = "https://t.me/neuromining_bot?start=" + str(user_id)
     markup = types.InlineKeyboardMarkup()
     button = types.InlineKeyboardButton(text='Пригласить друзей' if language == 'ru' else "Invite friends", switch_inline_query=referral_link)
     markup.add(button)
-    caption = f"Ваш баланс: {balance}\n\nКоличество рефералов: {referrals}\n\nНаграда за 1 реферала: {config.REFERRAL_REWARD} $TOKEN\n\nВаша реферальная ссылка: {referral_link}" if language == 'ru' else f"Your balance: {balance}\n\nReferrals: {referrals}\n\nReward for 1 referral: {config.REFERRAL_REWARD} $TOKEN\n\nYour referral link: {referral_link}"
+    caption = f"Ваш баланс: {balance}\n\nКоличество рефералов: {referrals}\n\nНаграда за 1 реферала: {config.REFERRAL_REWARD} $NEMR\n\nВаша реферальная ссылка: {referral_link}" if language == 'ru' else f"Your balance: {balance}\n\nReferrals: {referrals}\n\nReward for 1 referral: {config.REFERRAL_REWARD} $NEMR\n\nYour referral link: {referral_link}"
     bot.send_photo(chat_id=user_id, photo=image, caption=caption, reply_markup=markup)
 
 
@@ -266,8 +267,8 @@ def cmd_get(message: types.Message):
 
     if time_difference.total_seconds() >= config.CLAIM_INTERVAL * 3600:
         database.claim_reward(user_id=user_id)
-        ru_text = f"Вам начислено {config.CLAIM_REWARD} $TOKEN!"
-        en_text = f"You got {config.CLAIM_REWARD} $TOKEN!"
+        ru_text = f"Вам начислено {config.CLAIM_REWARD} $NEMR!"
+        en_text = f"You got {config.CLAIM_REWARD} $NEMR!"
         send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
     else:
         remaining_time = datetime.timedelta(seconds=12 * 3600) - time_difference
@@ -289,7 +290,7 @@ def cmd_wallet(message: types.Message):
         return
     language = database.get_language(user_id=user_id)
     wallet = database.get_wallet(user_id=user_id)
-    text = f"Ваш кошелек: {wallet}\nВам нужно привязать НЕкастодиальный кошелек сети TON -  рекомендуем Tonkeeper\Tonhub\MyTonWallet" if language == "ru" else f"Your wallet: {wallet}\nYou have to connect a non-custodial wallet of TON - we recommend Tonkeeper\Tonhub\MyTonWallet"
+    text = f"Ваш кошелек: {wallet}\n\nВам нужно привязать некастодиальный кошелек сети TON - рекомендуем Tonkeeper\Tonhub\MyTonWallet" if language == "ru" else f"Your wallet: {wallet}\n\nYou have to connect a non-custodial wallet of TON - we recommend Tonkeeper\Tonhub\MyTonWallet"
     image = open(f"images/wallet_{language}.jpg", "rb")
     markup = types.InlineKeyboardMarkup()
     add_wallet_button = types.InlineKeyboardButton('Привязать кошелек' if language == "ru" 
@@ -302,7 +303,7 @@ def cmd_wallet(message: types.Message):
 def callback_add_wallet(call):
     user_id = call.from_user.id
     language = database.get_language(user_id=user_id)
-    answer = "Используйте только некастодиальные кошельки, такие как:\nTonSpace, MyTonWallet, Tonkeeper и т. п.\n\nПожалуйста, пришлите адрес кошелька, который вы желаете привязать:" if language == "ru" else "Use only non-custodial wallets, like:\nTonSpace, MyTonWallet, Tonkeeper etc.\n\nPlease, send the adress of the wallet you want to connect:"
+    answer = "Пожалуйста, пришлите адрес кошелька:\n\nИспользуйте только некастодиальные кошельки, такие как:\nTonSpace, MyTonWallet, Tonkeeper" if language == "ru" else "Please send the wallet address:\n\n Use only non-custodial wallets such as:\nTonSpace, MyTonWallet, Tonkeeper"
     bot.send_message(call.message.chat.id, text=answer, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
     link_wallet.add(user_id)
 
@@ -317,7 +318,7 @@ def cmd_info(message: types.Message):
         ask_to_subscribe(user_id=user_id)
         return
     language = database.get_language(user_id=user_id)
-    text = f"Инфо, нужен текст" if language == "ru" else f"Info, needs text"
+    text = f"AIRDROP NEURO MINING 🛠\n\nNeuro Mining — Один из немногих проектов который будет давать реальную прибыль как только выйдет наше WebApp приложение! Это будет майнер различных криптовалют с мгновенным выводом!\n\nНаша задача сделать так, что-бы Абсолютно каждый участник получил гарантированную прибыль!\n\nКак только выйдет наше приложение, вы сразу же сможете получать различные монеты, делать вывод и продавать их, а так же получите наш токен $NEMR который даст сотни иксов на листинге!\n\nСейчас твоя основная задача — Собрать как можно больше наших токенов, выполнять задания, приглашать друзей, это даст тебе преимущество в игре и ты сможешь получать реальную прибыль 💰\n\n500 токенов $NEMR - За каждого приведенного друга! Чем больше у тебя друзей, тем больше $NEMR ты получишь!\n\nПриглашай друзей и выполняй задания, потому что позже может быть поздно! ⏳" if language == "ru" else f"AIRDROP NEURO MINING 🛠\n\nNeuro Mining is one of the few projects that will make a real profit as soon as our WebApp application is released! It will be a miner of various cryptocurrencies with instant withdrawal!\n\nOur task is to make sure that Absolutely every participant receives a guaranteed profit!\n\nAs soon as our application is released, you will immediately be able to receive various coins, withdraw and sell them, as well as receive our $NEMR token, which will give hundreds of icons on the listing!\n\nNow your main task is to collect as many of our tokens as possible, complete tasks, invite friends, this will give you an advantage in the game and you will be able to make a real profit 💰\n\n500 tokens $NEMR - For each friend you bring! The more friends you have, the more $NEMR you'll get!\n\nInvite your friends and complete tasks, because later it may be too late! ⏳"
     image = open(f"images/info_{language}.jpg", "rb")
     bot.send_photo(chat_id=user_id, photo=image, caption=text, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
 
