@@ -24,16 +24,17 @@ def init_db():
         cursor.execute("""CREATE TABLE IF NOT EXISTS channels(
                        public_link TEXT,
                        private_link TEXT,
-                       done_times INTEGER DEFAULT 0)
+                       done_times INTEGER DEFAULT 0,
+                       reward INTEGER DEFAULT 100)
                        """)
         conn.commit()
 
 
-def add_channel_into_db(public_link, private_link):
+def add_channel_into_db(public_link, private_link, reward=100):
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute(f"ALTER TABLE users ADD COLUMN {public_link[1:]} INTEGER DEFAULT 0")
-        cursor.execute(f"INSERT INTO channels (public_link, private_link) VALUES (?, ?)", (public_link, private_link))
+        cursor.execute(f"INSERT INTO channels (public_link, private_link, reward) VALUES (?, ?, ?)", (public_link, private_link, reward))
         conn.commit()
 
 
@@ -101,11 +102,11 @@ def increase_user_balance(user_id, number):
         cursor.execute(f"UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
 
 
-def reward_user_for_subscription(user_id):
+def reward_user_for_subscription(user_id: int, reward: int):
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id, ))
-        new_balance = int(cursor.fetchone()[0]) + config.TASK_REWARD
+        new_balance = int(cursor.fetchone()[0]) + reward
         cursor.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
 
 
@@ -164,6 +165,14 @@ def get_available_tasks(user_id) -> dict:
                 available_tasks_links.append(task_link)
         
         return dict(zip(available_tasks, available_tasks_links))
+
+
+def get_reward(public_link: str) -> int:
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT reward FROM channels WHERE public_link = ?", (public_link, ))
+        result = cursor.fetchone()
+        return result[0]
 
 
 def get_last_claim(user_id):

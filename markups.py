@@ -23,19 +23,6 @@ USER_MARKUP_EN.add(en_info_button, en_tasks_button)
 USER_MARKUP_EN.add(en_claim_button)
 
 
-ADMIN_MARKUP = types.ReplyKeyboardMarkup(resize_keyboard=True)
-balance_button = types.KeyboardButton('Баланс')
-wallet_button = types.KeyboardButton('Кошелек')
-info_button = types.KeyboardButton('О проекте')
-tasks_button = types.KeyboardButton('Задания')
-claim_button = types.KeyboardButton('Получить $NEMR')
-admin_button = types.InlineKeyboardButton('Админ панель')
-ADMIN_MARKUP.add(balance_button, wallet_button)
-ADMIN_MARKUP.add(info_button, tasks_button)
-ADMIN_MARKUP.add(claim_button)
-ADMIN_MARKUP.add(admin_button)
-
-
 balance_commands = [balance_button.text, en_balance_button.text]
 wallet_commands = [wallet_button.text, en_wallet_button.text]
 info_commands = [info_button.text, en_info_button.text]

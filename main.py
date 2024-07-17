@@ -2,7 +2,7 @@ import telebot
 from telebot import types
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import markups
-from markups import USER_MARKUP, ADMIN_MARKUP, USER_MARKUP_EN
+from markups import USER_MARKUP, USER_MARKUP_EN
 
 import datetime
 import time
@@ -22,6 +22,7 @@ referrers = dict()
 
 STATE_WAITING_FOR_PUBLIC_LINK = "waiting_for_public_link"
 STATE_WAITING_FOR_PRIVATE_LINK = "waiting_for_private_link"
+STATE_WAITING_FOR_REWARD = "waiting_for_reward"
 STATE_WAITING_FOR_PUBLIC_LINK_TO_DELETE = "waiting_for_public_link_to_delete"
 STATE_WAITING_FOR_BROADCAST_MESSAGE = "waiting_for_broadcast_message"
 STATE_WAITING_FOR_BROADCAST_IMAGE = "waiting_for_broadcast_image"
@@ -99,7 +100,8 @@ def user_is_subscribed_to_channel(user_id, public_link):
 def add_channel(user_id):
     public_link = admin_states_data[user_id]["public_link"]
     private_link = admin_states_data[user_id]["private_link"]
-    database.add_channel_into_db(public_link=public_link, private_link=private_link)
+    reward = admin_states_data[user_id]["reward"]
+    database.add_channel_into_db(public_link=public_link, private_link=private_link, reward=reward)
 
 
 def send_reward_to_referrer(referrer_id):
@@ -183,9 +185,11 @@ def cmd_tasks(message: types.Message):
     
     tasks = database.get_available_tasks(user_id=user_id)
     inline_markup = InlineKeyboardMarkup()
-    for task in tasks:
-        channel_name = bot.get_chat("@" + task).title
-        button = InlineKeyboardButton(channel_name, callback_data=f"channel_{task}")
+    #  suppose to get link without "@"
+    for public_link in tasks:
+        channel_name = bot.get_chat("@" + public_link).title
+        reward = database.get_reward(public_link=public_link)
+        button = InlineKeyboardButton(f"{channel_name} | {reward} $NEMR", callback_data=f"channel_{public_link}")
         inline_markup.add(button)
 
     image = open(f"images/tasks_{language}.jpg", "rb")
@@ -212,13 +216,14 @@ def channel_subscription(call: types.CallbackQuery):
 def check_subscription(call: types.CallbackQuery):
     user_id = call.from_user.id
     public_link = "_".join(call.data.split("_")[1:])
+    reward = database.get_reward(public_link=public_link)
     if not database.was_rewarded_for_subscription(user_id=user_id, public_link=public_link):
         if user_is_subscribed_to_channel(user_id=user_id, public_link=public_link):
             database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
             database.increase_task_done_times(public_link=public_link)
-            database.reward_user_for_subscription(user_id=user_id)
-            ru_text = f"Вам начислено {config.TASK_REWARD} $NEMR!"
-            en_text = f"You got {config.TASK_REWARD} $NEMR!"
+            database.reward_user_for_subscription(user_id=user_id, reward=reward)
+            ru_text = f"Вам начислено {reward} $NEMR!"
+            en_text = f"You got {reward} $NEMR!"
             send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
         else:
             ru_text = f"Вы не подписались на канал."
@@ -477,10 +482,26 @@ def handle_admin_message(message: types.Message):
                 admin_states_data[user_id]["private_link"] = private_link
             else:
                 admin_states_data[user_id]["private_link"] = private_link
+            admin_states[user_id] = STATE_WAITING_FOR_REWARD
+            text = f"Установите размер вознаграждения за выполнение задания (цифра) :"
+            bot.send_message(chat_id=user_id, text=text)
+            return
+        
+        if admin_states[user_id] == STATE_WAITING_FOR_REWARD:
+            string = message.text
+            #  default reward
+            reward = 100
+            if user_id not in admin_states_data:
+                admin_states_data[user_id] = {}
+            try:
+                reward = int(string)
+            except:
+                bot.send_message(chat_id=user_id, text="Это не число")
+                return
+            admin_states_data[user_id]["reward"] = reward
             add_channel(user_id)
             text = f"Канал успешно добавлен в задания."
             bot.send_message(chat_id=user_id, text=text)
-            admin_states[user_id] = None  # Reset the state
             return
 
         if admin_states[user_id] == STATE_WAITING_FOR_PUBLIC_LINK_TO_DELETE:
