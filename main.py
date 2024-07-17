@@ -217,7 +217,7 @@ def check_subscription(call: types.CallbackQuery):
             database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
             database.increase_task_done_times(public_link=public_link)
             database.reward_user_for_subscription(user_id=user_id)
-            ru_text = f"Вам начислено {config.SUBSCRIPTION_REWARD} $NEMR!"
+            ru_text = f"Вам начислено {config.TASK_REWARD} $NEMR!"
             en_text = f"You got {config.TASK_REWARD} $NEMR!"
             send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
         else:

@@ -105,7 +105,7 @@ def reward_user_for_subscription(user_id):
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id, ))
-        new_balance = int(cursor.fetchone()[0]) + config.SUBSCRIPTION_REWARD
+        new_balance = int(cursor.fetchone()[0]) + config.TASK_REWARD
         cursor.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
 
 
