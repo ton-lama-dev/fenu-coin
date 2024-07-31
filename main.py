@@ -188,7 +188,7 @@ def cmd_tasks(message: types.Message):
     #  suppose to get link without "@"
     for public_link in tasks:
         channel_name = bot.get_chat("@" + public_link).title
-        reward = database.get_reward(public_link=public_link)
+        reward = database.get_reward(public_link="@" + public_link)
         button = InlineKeyboardButton(f"{channel_name} | {reward} $NEMR", callback_data=f"channel_{public_link}")
         inline_markup.add(button)
 
@@ -272,7 +272,7 @@ def cmd_get(message: types.Message):
 
     if time_difference.total_seconds() >= config.CLAIM_INTERVAL * 3600:
         database.claim_reward(user_id=user_id)
-        ru_text = f"Вам начислено {config.CLAIM_REWARD}\n\nСкоро выйдет наша игра и они тебе будут нужны, заходи каждый день 👋"
+        ru_text = f"Вам начислено {config.CLAIM_REWARD} $NEMR!\n\nСкоро выйдет наша игра и они тебе будут нужны, заходи каждый день 👋"
         en_text = f"You got {config.CLAIM_REWARD} $NEMR!\n\nOur game will be released soon and you'll need them, log in every day👋"
         send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
     else:
@@ -295,7 +295,7 @@ def cmd_wallet(message: types.Message):
         return
     language = database.get_language(user_id=user_id)
     wallet = database.get_wallet(user_id=user_id)
-    text = f"Ваш кошелек: {wallet}\n\nВам нужно привязать некастодиальный кошелек сети TON - рекомендуем Tonkeeper\Tonhub\MyTonWallet" if language == "ru" else f"Your wallet: {wallet}\n\nYou have to connect a non-custodial wallet of TON - we recommend Tonkeeper\Tonhub\MyTonWallet"
+    text = f"Ваш кошелек: {wallet}\n\nВам нужно привязать некастодиальный кошелек сети TON - рекомендуем Tonkeeper/Tonhub/MyTonWallet" if language == "ru" else f"Your wallet: {wallet}\n\nYou have to connect a non-custodial wallet of TON - we recommend Tonkeeper/Tonhub/MyTonWallet"
     image = open(f"images/wallet_{language}.jpg", "rb")
     markup = types.InlineKeyboardMarkup()
     add_wallet_button = types.InlineKeyboardButton('Привязать кошелек' if language == "ru" 

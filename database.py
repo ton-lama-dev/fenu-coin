@@ -171,7 +171,10 @@ def get_reward(public_link: str) -> int:
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT reward FROM channels WHERE public_link = ?", (public_link, ))
+        print(public_link)
         result = cursor.fetchone()
+        print(result)
+        print(result[0])
         return result[0]
 
 
