@@ -141,7 +141,7 @@ def callback_check_default_subscription(call):
     user_is_subscribed = is_subscribed_default(user_id=user_id)
     if user_is_subscribed:
         image = open(f'images/welcome_{language}.jpg', 'rb')
-        caption = "Кратко о проекте, приветственное сообщение"
+        caption = "Добро пожаловать в Neuro Mining!\n\n🚀 AirDrop будущего WebApp приложения с реальным доходом! \n\nВыполняйте задания, приглашайте друзей и получайте токен $NEMR а так же другие криптовалюты! Действуйте! \n\nНе упускайте возможность увеличить свой доход, действуйте⚡️" if language == "ru" else "Welcome to Neuro Mining!\n\n🚀 AirDrop of the future WebApp application with real income!\n\nComplete tasks, invite friends and get $NEMR token as well as other cryptocurrencies! Act!\n\nDon't miss the opportunity to increase your income, act⚡️"
         bot.send_photo(chat_id=user_id, photo=image, caption=caption, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
     else:
         ask_to_subscribe(user_id=user_id)
@@ -167,8 +167,8 @@ def cmd_start(message: types.Message):
         language = ask_to_choose_language(user_id=user_id)
     else:
         image = f"images/welcome_{language}.jpg"
-        ru_caption = "Добро пожаловать в Neuro Mining BOT! \n\n🚀 AirDrop будущего WebApp приложения с реальным доходом! \n\nВыполняйте задания, приглашайте друзей и получайте токен $NEMR а так же другие криптовалюты! Действуйте! \n\nНе пропустите возможность увеличить свой доход, действуйте ⚡️"
-        en_caption = "Welcome to Neuro Mining BOT! \n\n🚀 AirDrop the future WebApp application with real income! \n\nComplete tasks, invite friends and receive a $NEMR token as well as other cryptocurrencies! Take action! \n\nDon't miss the opportunity to increase your income, take action ⚡️"
+        ru_caption = "Добро пожаловать в Neuro Mining! \n\n🚀 AirDrop будущего WebApp приложения с реальным доходом! \n\nВыполняйте задания, приглашайте друзей и получайте токен $NEMR а так же другие криптовалюты!\n\nДействуйте! \n\nНе пропустите возможность увеличить свой доход, действуйте"
+        en_caption = "Welcome to Neuro Mining! \n\n🚀 AirDrop the future WebApp application with real income! \n\nComplete tasks, invite friends and receive a $NEMR token as well as other cryptocurrencies!\n\nTake action! \n\nDon't miss the opportunity to increase your income, take action"
         send_message_by_language(user_id=user_id, ru_message=ru_caption, en_message=en_caption, image=image)
 
 
@@ -272,8 +272,8 @@ def cmd_get(message: types.Message):
 
     if time_difference.total_seconds() >= config.CLAIM_INTERVAL * 3600:
         database.claim_reward(user_id=user_id)
-        ru_text = f"Вам начислено {config.CLAIM_REWARD} $NEMR!"
-        en_text = f"You got {config.CLAIM_REWARD} $NEMR!"
+        ru_text = f"Вам начислено {config.CLAIM_REWARD}\n\nСкоро выйдет наша игра и они тебе будут нужны, заходи каждый день 👋"
+        en_text = f"You got {config.CLAIM_REWARD} $NEMR!\n\nOur game will be released soon and you'll need them, log in every day👋"
         send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
     else:
         remaining_time = datetime.timedelta(seconds=12 * 3600) - time_difference
