@@ -11,9 +11,9 @@ def connect_db():
 def init_db():
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+        cursor.execute(f"""CREATE TABLE IF NOT EXISTS users(
                        id INTEGER PRIMARY KEY,
-                       balance INTEGER DEFAULT 1000,
+                       balance INTEGER DEFAULT {config.WELCOME_BONUS},
                        referrals INTEGER DEFAULT 0,
                        referrer INTEGER,
                        wallet TEXT DEFAULT 'не подключен',
@@ -320,3 +320,10 @@ def get_user_info(user_id):
         row = cursor.fetchall()[0]
         #lst = [i[0] for i in row]
         return row
+
+
+def users_set(user_id: int, item: str, value):
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE users SET {item} = ? WHERE id = ?", (value, user_id))
+        conn.commit()
