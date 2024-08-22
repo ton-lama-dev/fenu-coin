@@ -97,7 +97,10 @@ def increase_task_done_times(public_link):
 def increase_user_balance(user_id, number):
     with connect_db() as conn:
         cursor = conn.cursor()
-        current_balance = cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id, )).fetchone()[0]
+        print("user_id: " + user_id)
+        print("number: " + number)
+        cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id, ))
+        current_balance = cursor.fetchone()[0]
         new_balance = current_balance + int(number)
         cursor.execute(f"UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
 
