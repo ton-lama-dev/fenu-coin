@@ -6,6 +6,8 @@ from markups import USER_MARKUP, USER_MARKUP_EN
 
 import datetime
 import time
+import sys
+import traceback
 
 import database
 import config
@@ -13,6 +15,13 @@ from config import CHANNEL, ADMINS, TOKEN
 
 
 bot = telebot.TeleBot(token=TOKEN, skip_pending=True)
+
+
+def global_exception_handler(exctype, value, tb):
+    print("An unhandles exception occured:")
+    traceback.print_exception(exctype, value, tb)
+
+sys.excepthook = global_exception_handler
 
 
 admin_states = {}
@@ -28,9 +37,13 @@ STATE_WAITING_FOR_BROADCAST_MESSAGE = "waiting_for_broadcast_message"
 STATE_WAITING_FOR_BROADCAST_IMAGE = "waiting_for_broadcast_image"
 STATE_WAITING_FOR_BROADCAST_BUTTON_NAME = "waiting_for_broadcast_name"
 STATE_WAITING_FOR_BROADCAST_BUTTON_LINK = "waiting_for_broadcast_link"
-STATE_WAITING_FOR_USER_ID_TO_GET_INFO = "waiting_for_user_id_to_get_info"
-STATE_WAITING_FOR_USER_ID_TO_INCREASE_BALANCE = "waiting_for_user_id_to_increase_balance"
+STATE_WAITING_FOR_USER_USERNAME_TO_GET_INFO = "waiting_for_user_username_to_get_info"
+STATE_WAITING_FOR_USER_USERNAME_TO_INCREASE_BALANCE = "waiting_for_user_id_to_increase_balance"
+STATE_WAITING_FOR_USER_USERNAME_TO_DECREASE_BALANCE = "waiting_for_user_id_to_decrease_balance"
 STATE_WAITING_FOR_NUMBER_TO_INCREASE_BALANCE = "waiting_for_number_to_increase_balance"
+STATE_WAITING_FOR_NUMBER_TO_DECREASE_BALANCE = "waiting_for_number_to_decrease_balance"
+STATE_WAITING_FOR_BUYER_USERNAME = "waiting_for_buyer_username"
+STATE_WAITING_FOR_BUYER_SUM = "waiting_for_buyer_sum"
 
 
 def is_subscribed_default(user_id):
@@ -79,7 +92,16 @@ def get_channel_id(channel_link):
     except Exception as e:
         print(f"Не удалось получить ID канала")
         return None
-    
+
+
+def get_username_by_id(id: int) -> str:
+    try:
+        chat = bot.get_chat(id)
+        return chat.username
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
 
 def user_is_admin(user_id):
     return user_id in ADMINS
@@ -112,29 +134,33 @@ def send_reward_to_referrer(referrer_id):
 
 @bot.callback_query_handler(func=lambda call: call.data in ["set_ru", "set_en"])
 def callback_set_language(call: types.CallbackQuery):
-    user_id = call.from_user.id
-    language = call.data[-2:]
-    referrer = None
-    if not database.is_user_in_db(user_id=user_id):
-        if user_id in referrers:
-            referrer_candidate = referrers[user_id]
-            if database.is_user_in_db(user_id=referrer_candidate):
-                if not referrer_candidate == user_id:
-                    referrer = referrer_candidate
-                    send_reward_to_referrer(referrer_id=referrer)
-                    database.increase_referrals(user_id=referrer)
-        if referrer != None:
-            database.add_user_into_db(user_id=user_id, language=language, referrer=referrer)
+    try:
+        user_id = call.from_user.id
+        language = call.data[-2:]
+        username = get_username_by_id(user_id)
+        referrer = None
+        if not database.is_user_in_db(user_id=user_id):
+            if user_id in referrers:
+                referrer_candidate = referrers[user_id]
+                if database.is_user_in_db(user_id=referrer_candidate):
+                    if not referrer_candidate == user_id:
+                        referrer = referrer_candidate
+                        send_reward_to_referrer(referrer_id=referrer)
+                        database.increase_referrals(user_id=referrer)
+            if referrer != None:
+                database.add_user_into_db(user_id=user_id, language=language, referrer=referrer, username=username)
+            else:
+                database.add_user_into_db(user_id=user_id, language=language, username=username)
+            ru_text = f"Вам начислен приветственный бонус в размере {config.WELCOME_BONUS} {config.COIN_NAME}"
+            en_text = f"You got a welcome bonus of {config.WELCOME_BONUS} {config.COIN_NAME}"
+            send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
         else:
-            database.add_user_into_db(user_id=user_id, language=language)
-        ru_text = f"Вам начислен приветственный бонус в размере {config.WELCOME_BONUS} {config.COIN_NAME}"
-        en_text = f"You got a welcome bonus of {config.WELCOME_BONUS} {config.COIN_NAME}"
-        send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
-    else:
-        database.users_set(user_id=user_id, item="language", value=language)
-    if not is_subscribed_default(user_id=user_id):
-        ask_to_subscribe(user_id=user_id)
-        return
+            database.users_set(user_id=user_id, item="language", value=language)
+        if not is_subscribed_default(user_id=user_id):
+            ask_to_subscribe(user_id=user_id)
+            return
+    except Exception as e:
+        print(e)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "callback_check_default_subscription")
@@ -152,27 +178,30 @@ def callback_check_default_subscription(call):
 
 @bot.message_handler(commands=["start"])
 def cmd_start(message: types.Message):
-    user_id = message.from_user.id
-    referrer_id = None
-    if " " in message.text:
-        referrer_id = message.text.split()[1]
-        referrers[user_id] = referrer_id
-    else:
-        referrers[user_id] = None
-    if not database.is_user_in_db(user_id=user_id):
-        ask_to_choose_language(user_id=user_id)
-        return
-    if not is_subscribed_default(user_id=user_id):
-        ask_to_subscribe(user_id=user_id)
-        return
-    language = database.get_language(user_id=user_id)
-    if not database.is_user_in_db(user_id=user_id):
-        language = ask_to_choose_language(user_id=user_id)
-    else:
-        image = f"images/img.jpg"
-        ru_caption = f"Добро пожаловать в Neuro Mining! \n\n🚀 AirDrop будущего WebApp приложения с реальным доходом! \n\nВыполняйте задания, приглашайте друзей и получайте токен {config.COIN_NAME} а так же другие криптовалюты!\n\nДействуйте! \n\nНе пропустите возможность увеличить свой доход, действуйте"
-        en_caption = f"Welcome to Neuro Mining! \n\n🚀 AirDrop the future WebApp application with real income! \n\nComplete tasks, invite friends and receive a {config.COIN_NAME} token as well as other cryptocurrencies!\n\nTake action! \n\nDon't miss the opportunity to increase your income, take action"
-        send_message_by_language(user_id=user_id, ru_message=ru_caption, en_message=en_caption, image=image)
+    try:
+        user_id = message.from_user.id
+        referrer_id = None
+        if " " in message.text:
+            referrer_id = message.text.split()[1]
+            referrers[user_id] = referrer_id
+        else:
+            referrers[user_id] = None
+        if not database.is_user_in_db(user_id=user_id):
+            ask_to_choose_language(user_id=user_id)
+            return
+        if not is_subscribed_default(user_id=user_id):
+            ask_to_subscribe(user_id=user_id)
+            return
+        language = database.get_language(user_id=user_id)
+        if not database.is_user_in_db(user_id=user_id):
+            language = ask_to_choose_language(user_id=user_id)
+        else:
+            image = f"images/img.jpg"
+            ru_caption = f"Добро пожаловать в Neuro Mining! \n\n🚀 AirDrop будущего WebApp приложения с реальным доходом! \n\nВыполняйте задания, приглашайте друзей и получайте токен {config.COIN_NAME} а так же другие криптовалюты!\n\nДействуйте! \n\nНе пропустите возможность увеличить свой доход, действуйте"
+            en_caption = f"Welcome to Neuro Mining! \n\n🚀 AirDrop the future WebApp application with real income! \n\nComplete tasks, invite friends and receive a {config.COIN_NAME} token as well as other cryptocurrencies!\n\nTake action! \n\nDon't miss the opportunity to increase your income, take action"
+            send_message_by_language(user_id=user_id, ru_message=ru_caption, en_message=en_caption, image=image)
+    except Exception as e:
+        print(e)
 
 
 @bot.message_handler(func=lambda message: message.text in markups.tasks_commands)
@@ -188,12 +217,13 @@ def cmd_tasks(message: types.Message):
     
     tasks = database.get_available_tasks(user_id=user_id)
     inline_markup = InlineKeyboardMarkup()
-    #  suppose to get link without "@"
-    for public_link in tasks:
-        channel_name = bot.get_chat("@" + public_link).title
-        reward = database.get_reward(public_link="@" + public_link)
-        button = InlineKeyboardButton(f"{channel_name} | {reward} {config.COIN_NAME}", callback_data=f"channel_{public_link}")
-        inline_markup.add(button)
+    if tasks:
+        #  suppose to get link without "@"
+        for public_link in tasks:
+            channel_name = bot.get_chat("@" + public_link).title
+            reward = database.get_reward(public_link="@" + public_link)
+            button = InlineKeyboardButton(f"{channel_name} | {reward} {config.COIN_NAME}", callback_data=f"channel_{public_link}")
+            inline_markup.add(button)
 
     image = open(f"images/img.jpg", "rb")
     ru_text = f"За выполнение каждого задания вы получаете наш токен {config.COIN_NAME}\n\nЧем больше заданий вы выполните, тем больше токенов будет на вашем балансе!"
@@ -217,25 +247,28 @@ def channel_subscription(call: types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("check_"))
 def check_subscription(call: types.CallbackQuery):
-    user_id = call.from_user.id
-    public_link = "_".join(call.data.split("_")[1:])
-    reward = database.get_reward(public_link=public_link)
-    if not database.was_rewarded_for_subscription(user_id=user_id, public_link=public_link):
-        if user_is_subscribed_to_channel(user_id=user_id, public_link=public_link):
-            database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
-            database.increase_task_done_times(public_link=public_link)
-            database.reward_user_for_subscription(user_id=user_id, reward=reward)
-            ru_text = f"Вам начислено {reward} {config.COIN_NAME}!"
-            en_text = f"You got {reward} {config.COIN_NAME}!"
-            send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
+    try:
+        user_id = call.from_user.id
+        public_link = "_".join(call.data.split("_")[1:])
+        reward = database.get_reward(public_link=public_link)
+        if not database.was_rewarded_for_subscription(user_id=user_id, public_link=public_link):
+            if user_is_subscribed_to_channel(user_id=user_id, public_link=public_link):
+                database.subscribe_user_to_channel(user_id=user_id, public_link=public_link)
+                database.increase_task_done_times(public_link=public_link)
+                database.reward_user_for_subscription(user_id=user_id, reward=reward)
+                ru_text = f"Вам начислено {reward} {config.COIN_NAME}!"
+                en_text = f"You got {reward} {config.COIN_NAME}!"
+                send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
+            else:
+                ru_text = f"Вы не подписались на канал."
+                en_text = f"You didn't subscribed to the channel."
+                send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
         else:
-            ru_text = f"Вы не подписались на канал."
-            en_text = f"You didn't subscribed to the channel."
+            ru_text = f"Вы уже получили награду."
+            en_text = f"You already got the reward."
             send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
-    else:
-        ru_text = f"Вы уже получили награду."
-        en_text = f"You already got the reward."
-        send_message_by_language(user_id=user_id, ru_message=ru_text, en_message=en_text)
+    except Exception as e:
+        print(e)
 
 
 @bot.message_handler(func=lambda message: message.text in markups.balance_commands)
@@ -341,9 +374,52 @@ def cmd_info(message: types.Message):
         ask_to_subscribe(user_id=user_id)
         return
     language = database.get_language(user_id=user_id)
-    text = f"📈 Ранние пользователи могут приобрести {config.COIN_NAME} по цене пре-сейла!\n\nЦена одного токена - 1 USD. Чтобы поучаствовать в пре-сейле, отправте средства на один из адресов:\n\nСеть: BSC(BEP20) - USDT\nАдрес: 0x8B1AAEFb70Ecc077E85Fdecf8d1981BE39F84224\n\nСеть: TON - TON\nАдрес: UQARQ2tvxW_L1KkzxZEUsblU1PIRK5mzgCX4zmZ6ahvspA2X\n\nPayeer\nАдрес: P75034256\n\nПеревод на карту\nОбращаться к админу: @Bugirt\n\n✅На ваш кошелек поступят токены пропорционально количеству отправленных монет. Выплаты производятся 1 раз в сутки." if language == "ru" else f"📈 Early adopters can purchase {config.COIN_NAME} at the pre-sale price.\n\nThe price of one token is 1 USD. To participate in the pre-sale, send funds to one of the addresses:\n\nNetwork: BSC(BEP20) - USDT\nAddress: 0x8B1AAEFb70Ecc077E85Fdecf8d1981BE39F84224\n\nNetwork: TON - TON\nAddress: UQARQ2tvxW_L1KkzxZEUsblU1PIRK5mzgCX4zmZ6ahvspA2X\n\nPayeer\nAddress: P75034256\n\nCard transfer\nContact admin: @Bugirt\n\n✅Tokens will be credited to your wallet in proportion to the number of coins sent. Payments are made once a day."
+    text = f"📈 Ранние пользователи могут приобрести {config.COIN_NAME} по цене пре-сейла!\n\nЦена одного токена - 1 USD. Для покупки пишите @Bugirt\n\n✅ Доступные методы оплаты: XRocket, TON , TRX , USDT , Payeer (рубли, доллары, криптовалюта), карты российских банков." if language == "ru" else f"📈 Early adopters can purchase {config.COIN_NAME} at the pre-sale price.\n\nThe price of one token is 1 USD. To participate in the pre-sale, contact @Bugirt\n\n✅ Available payment methods: XRocket, TON , TRX , USDT , Payeer (rubles, dollars, crypto), russian bank cards."
     image = open(f"images/img.jpg", "rb")
     bot.send_photo(chat_id=user_id, photo=image, caption=text, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
+
+
+@bot.message_handler(func=lambda message: message.text in markups.buyers_reward_commands)
+def cmd_info(message: types.Message):
+    user_id = message.from_user.id
+    language = database.get_language(user_id=user_id)
+    if not database.is_user_in_db(user_id=user_id):
+        ask_to_choose_language(user_id=user_id)
+        return
+    if not is_subscribed_default(user_id=user_id):
+        ask_to_subscribe(user_id=user_id)
+        return
+    referrals_ids = database.get_referrals_ids(user_id=user_id)
+    if not referrals_ids:
+        image = open(f"images/img.jpg", "rb")
+        text = f"Вы получаете 20% от каждой покупки токенов вашим рефералом.\n\nВаш баланс: $0" if language == "ru" else f"You get 20% for each purchase of tokens by your referral.\n\nYour balance: $0"
+        bot.send_photo(chat_id=user_id, photo=image, caption=text)
+        return
+    referrals_usernames = database.get_referrals_usernames(referrals_ids=referrals_ids)
+    referrals_sums = database.get_buyers_referrals_sums(referrals_usernames)
+    revenue = round(float(database.users_get(item="buyers_balance", user_id=user_id)), 2)
+    revenue_and_referrals = ""
+    for i in range(len(referrals_ids)):
+        revenue_and_referrals += f"@{referrals_usernames[i]}: ${referrals_sums[i]}\n"
+    text = f"Вы получаете 20% от каждой покупки токенов вашим рефералом.\n\nВаш баланс: ${revenue}\n\nПрибыль по рефералам:\n{revenue_and_referrals}" if language == "ru" else f"You get 20% for each purchase of tokens by your referral.\n\nYour balance: ${revenue}\n\nRevenue by referrals:\n{revenue_and_referrals}"
+    inline_markup = InlineKeyboardMarkup(row_width=1)
+    request_withdrawal_button = InlineKeyboardButton(text="💵 Запросить выплату" if language == "ru" else "💵 Request a withdrawal", callback_data="request_withdrawal")
+    inline_markup.add(request_withdrawal_button)
+    image = open(f"images/img.jpg", "rb")
+    bot.send_photo(chat_id=user_id, photo=image, caption=text, reply_markup=inline_markup)
+
+@bot.callback_query_handler(func=lambda call: call.data == "request_withdrawal")
+def callback_request_withdrawal(call):
+    user_id = call.from_user.id
+    language = database.get_language(user_id=user_id)
+    try:
+        database.create_withdrawal_request(user_id=user_id)
+        text = "Заявка создана успешно." if language == "ru" else "Request created successfully."
+        bot.send_message(chat_id=user_id, text=text)
+    except Exception as e:
+        text = "callback_request_withdrawal: " + str(e)
+        bot.send_message(chat_id=user_id, text=text)
+
 
 
 @bot.message_handler(commands=["admin"])
@@ -351,12 +427,15 @@ def cmd_admin_panel(message: types.Message):
     user_id = message.from_user.id
     if not user_is_admin(user_id=user_id):
         return
-    inline_markup = InlineKeyboardMarkup(row_width=1)
+    inline_markup = InlineKeyboardMarkup(row_width=2)
     users_button = InlineKeyboardButton("Пользователи 👨‍👩‍👧‍👦", callback_data="admin_users")
     statistics_button = InlineKeyboardButton("Статистика 📊", callback_data="admin_statistics")
     tasks_button = InlineKeyboardButton("Задания 📋", callback_data="admin_tasks")
     broadcast_button = InlineKeyboardButton("Рассылка 📩", callback_data="admin_broadcast")
-    inline_markup.add(users_button, statistics_button, tasks_button, broadcast_button)
+    add_buyer_button = InlineKeyboardButton("Добавить покупателя ➕", callback_data="admin_add_buyer")
+    buyers_button = InlineKeyboardButton("Список покупателей 💰", callback_data="admin_buyers")
+    withdrawal_requests_button = InlineKeyboardButton("Заявки на вывод 💵", callback_data="admin_withdrawal_requests")
+    inline_markup.add(users_button, statistics_button, tasks_button, broadcast_button, add_buyer_button, buyers_button, withdrawal_requests_button)
     bot.send_message(chat_id=user_id, text="Панель администратора", reply_markup=inline_markup)
 
 
@@ -371,23 +450,31 @@ def callback_admin_broadcast(call):
 @bot.callback_query_handler(func=lambda call: call.data == "admin_users")
 def callback_admin_broadcast(call):
     user_id = call.from_user.id
-    text = "/increase_balance - увеличить баланс пользователю\n/get_info - получить информацию о пользователе"
+    text = "/increase_balance - увеличить баланс пользователя\n\n/decrease_balance - уменьшить баланс пользователя\n\n/get_info - получить информацию о пользователе"
     bot.send_message(chat_id=user_id, text=text)
 
 
 @bot.message_handler(commands=["increase_balance"])
 def cmd_increase_balance(message: types.Message):
     user_id = message.from_user.id
-    admin_states[user_id] = STATE_WAITING_FOR_USER_ID_TO_INCREASE_BALANCE
-    text = "Отправьте ID пользователя:"
+    admin_states[user_id] = STATE_WAITING_FOR_USER_USERNAME_TO_INCREASE_BALANCE
+    text = "Отправьте никнейм пользователя вида @example:"
+    bot.send_message(chat_id=user_id, text=text)
+
+
+@bot.message_handler(commands=["decrease_balance"])
+def cmd_increase_balance(message: types.Message):
+    user_id = message.from_user.id
+    admin_states[user_id] = STATE_WAITING_FOR_USER_USERNAME_TO_DECREASE_BALANCE
+    text = "Отправьте никнейм пользователя вида @example:"
     bot.send_message(chat_id=user_id, text=text)
 
 
 @bot.message_handler(commands=["get_info"])
 def cmd_get_info(message: types.Message):
     user_id = message.from_user.id
-    admin_states[user_id] = STATE_WAITING_FOR_USER_ID_TO_GET_INFO
-    text = "Отправьте ID пользователя, информацию и котором вы хотите получить:"
+    admin_states[user_id] = STATE_WAITING_FOR_USER_USERNAME_TO_GET_INFO
+    text = "Отправьте никнейм пользователя, информацию и котором вы хотите получить:"
     bot.send_message(chat_id=user_id, text=text)
 
 
@@ -462,153 +549,272 @@ def cmd_add(message: types.Message):
 
 @bot.message_handler(commands=["remove"])
 def cmd_delete(message: types.Message):
-    user_id = message.from_user.id
-    if not user_is_admin(user_id=user_id):
-        return
-    text = "Пришлите публичную ссылку канала, который вы хотите удалить, вида @example:"
+    try:
+        user_id = message.from_user.id
+        if not user_is_admin(user_id=user_id):
+            return
+        text = "Пришлите публичную ссылку канала, который вы хотите удалить, вида @example:"
+        bot.send_message(chat_id=user_id, text=text)
+        admin_states[user_id] = STATE_WAITING_FOR_PUBLIC_LINK_TO_DELETE
+    except Exception as e:
+        print(e)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_add_buyer")
+def callback_admin_tasks(call):
+    user_id = call.from_user.id
+    admin_states[user_id] = STATE_WAITING_FOR_BUYER_USERNAME
+    text = "Пришлите никнейм пользователя вида @example:"
     bot.send_message(chat_id=user_id, text=text)
-    admin_states[user_id] = STATE_WAITING_FOR_PUBLIC_LINK_TO_DELETE
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_buyers")
+def callback_admin_buyers(call):
+    user_id = call.from_user.id
+    buyers = database.get_all_buyers()
+
+    file_name = 'buyers.txt'
+    with open(file_name, 'w', encoding="utf-8") as file:
+        file.write("BUYERS LIST:\n\n")
+        for buyer in buyers:
+            line = f"Username: {buyer[0]}, Wallet: {buyer[1]}, Sum: {buyer[2]}\n"
+            file.write(line)
+
+    with open("buyers.txt", 'rb') as file:
+        bot.send_document(user_id, file)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_withdrawal_requests")
+def callback_admin_withdrawal_requests(call):
+    user_id = call.from_user.id
+    text = "Список заявок на вывод:\n\n"
+    data = database.get_withdrawal_requests_data()
+    if not data:
+        bot.send_message(chat_id=user_id, text="Заявок на вывод нет.")
+        return
+    for request in data:
+        text += f"Никнейм: {request[0]} Сумма: ${request[1]} Кошелек: {request[2]}\n"
+    bot.send_message(chat_id=user_id, text=text)
 
 
 @bot.message_handler(func=lambda message: True, content_types=["text", "photo"])
 def handle_admin_message(message: types.Message):
-    user_id = message.from_user.id
-    language = database.get_language(user_id=user_id)
-    global admin_states, admin_states_data, link_wallet
+    try:
+        user_id = message.from_user.id
+        language = database.get_language(user_id=user_id)
+        global admin_states, admin_states_data, link_wallet
 
-    if user_id in admin_states:
-        if admin_states[user_id] == STATE_WAITING_FOR_PUBLIC_LINK:
-            public_link = message.text
-            if not public_link_is_valid(public_link):
-                text = "Данная публичная ссылка не существует, попробуйте снова:"
+        if user_id in admin_states:
+            if admin_states[user_id] == STATE_WAITING_FOR_PUBLIC_LINK:
+                public_link = message.text
+                if not public_link_is_valid(public_link):
+                    text = "Данная публичная ссылка не существует, попробуйте снова:"
+                    bot.send_message(chat_id=user_id, text=text)
+                    return
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["public_link"] = public_link
+                text = "Отправьте специальную ссылку на канал (если ее нет - пришлите 0):"
+                bot.send_message(chat_id=user_id, text=text)
+                admin_states[user_id] = STATE_WAITING_FOR_PRIVATE_LINK
+                return
+
+            if admin_states[user_id] == STATE_WAITING_FOR_PRIVATE_LINK:
+                private_link = message.text
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                if message.text == "0":
+                    private_link = "https://t.me/" + admin_states_data[user_id]["public_link"][1:]
+                    admin_states_data[user_id]["private_link"] = private_link
+                else:
+                    admin_states_data[user_id]["private_link"] = private_link
+                admin_states[user_id] = STATE_WAITING_FOR_REWARD
+                text = f"Установите размер вознаграждения за выполнение задания (цифра) :"
                 bot.send_message(chat_id=user_id, text=text)
                 return
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            admin_states_data[user_id]["public_link"] = public_link
-            text = "Отправьте специальную ссылку на канал (если ее нет - пришлите 0):"
-            bot.send_message(chat_id=user_id, text=text)
-            admin_states[user_id] = STATE_WAITING_FOR_PRIVATE_LINK
-            return
-
-        if admin_states[user_id] == STATE_WAITING_FOR_PRIVATE_LINK:
-            private_link = message.text
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            if message.text == "0":
-                private_link = "https://t.me/" + admin_states_data[user_id]["public_link"][1:]
-                admin_states_data[user_id]["private_link"] = private_link
-            else:
-                admin_states_data[user_id]["private_link"] = private_link
-            admin_states[user_id] = STATE_WAITING_FOR_REWARD
-            text = f"Установите размер вознаграждения за выполнение задания (цифра) :"
-            bot.send_message(chat_id=user_id, text=text)
-            return
-        
-        if admin_states[user_id] == STATE_WAITING_FOR_REWARD:
-            string = message.text
-            #  default reward
-            reward = 100
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            try:
-                reward = int(string)
-            except:
-                bot.send_message(chat_id=user_id, text="Это не число")
-                return
-            admin_states_data[user_id]["reward"] = reward
-            add_channel(user_id)
-            text = f"Канал успешно добавлен в задания."
-            bot.send_message(chat_id=user_id, text=text)
-            return
-
-        if admin_states[user_id] == STATE_WAITING_FOR_PUBLIC_LINK_TO_DELETE:
-            public_link = message.text
-            if not database.is_channel_in_db(public_link):
-                text = "Такого канала нет в заданиях, попробуйте снова:"
-                bot.send_message(user_id, text=text)
-            else:
-                database.remove_channel_from_db(public_link=public_link)
-                text = "Канал успешно удален из заданий."
-                bot.send_message(chat_id=user_id, text=text)
-                admin_states[user_id] = None  # Reset the state
             
-        if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_MESSAGE:
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            admin_states_data[user_id]["broadcast_text"] = message.text
-            text = "Пришлите картинку для рассылки:"
-            bot.send_message(chat_id=user_id, text=text)
-            admin_states[user_id] = STATE_WAITING_FOR_BROADCAST_IMAGE
-            return
-
-        if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_IMAGE and message.content_type == 'photo':
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            admin_states_data[user_id]["broadcast_image_id"] = message.photo[-1].file_id
-            text = "Пришлите название кнопки для рассылки:"
-            bot.send_message(chat_id=user_id, text=text)
-            admin_states[user_id] = STATE_WAITING_FOR_BROADCAST_BUTTON_NAME
-            return
-
-        if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_BUTTON_NAME:
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            admin_states_data[user_id]["broadcast_button_name"] = message.text
-            text = "Пришлите ссылку для кнопки:"
-            bot.send_message(chat_id=user_id, text=text)
-            admin_states[user_id] = STATE_WAITING_FOR_BROADCAST_BUTTON_LINK
-            return
-
-        if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_BUTTON_LINK:
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            admin_states_data[user_id]["broadcast_button_link"] = message.text
-            text = "Рассылка успешно запущена. Вы получите сообщение по окончанию рассылки."
-            bot.send_message(chat_id=user_id, text=text)
-            broadcast_message(admin_id=user_id)
-            admin_states[user_id] = None  # Reset the state
-
-        if admin_states[user_id] == STATE_WAITING_FOR_USER_ID_TO_INCREASE_BALANCE:
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            admin_states_data[user_id]["user_id"] = message.text
-            text = "Отправьте число, на которое хотите увеличить баланс пользователя:"
-            bot.send_message(chat_id=user_id, text=text)
-            admin_states[user_id] = STATE_WAITING_FOR_NUMBER_TO_INCREASE_BALANCE
-            return
-
-        if admin_states[user_id] == STATE_WAITING_FOR_NUMBER_TO_INCREASE_BALANCE:
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            admin_states_data[user_id]["number"] = message.text
-            text = "Баланс пользователя увеличен."
-            bot.send_message(chat_id=user_id, text=text)
-            admin_states[user_id] = None
-            database.increase_user_balance(user_id=admin_states_data[user_id]["user_id"], number=admin_states_data[user_id]["number"])
-
-        if admin_states[user_id] == STATE_WAITING_FOR_USER_ID_TO_GET_INFO:
-            if user_id not in admin_states_data:
-                admin_states_data[user_id] = {}
-            id = message.text
-            if database.is_user_in_db(user_id=id):
-                data = database.get_user_info(user_id=user_id)
-                user_id, balance, referrals, referrer, wallet, registration_date, language = data
-                text = f"ID: {user_id}\nБаланс:{balance}\nКол-во рефералов: {referrals}\nРеферер: {referrer}\nКошелек: {wallet}\nПрисоединился: {registration_date}\nЯзык: {language}"
+            if admin_states[user_id] == STATE_WAITING_FOR_REWARD:
+                string = message.text
+                #  default reward
+                reward = 100
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                try:
+                    reward = int(string)
+                except:
+                    bot.send_message(chat_id=user_id, text="Это не число")
+                    return
+                admin_states_data[user_id]["reward"] = reward
+                add_channel(user_id)
+                text = f"Канал успешно добавлен в задания."
                 bot.send_message(chat_id=user_id, text=text)
-            else:
-                bot.send_message(chat_id=user_id, text="Пользователя с таким ID не существует.")
+                return
 
-            admin_states[user_id] = None
+            if admin_states[user_id] == STATE_WAITING_FOR_PUBLIC_LINK_TO_DELETE:
+                public_link = message.text
+                if not database.is_channel_in_db(public_link):
+                    text = "Такого канала нет в заданиях, попробуйте снова:"
+                    bot.send_message(user_id, text=text)
+                else:
+                    database.remove_channel_from_db(public_link=public_link)
+                    text = "Канал успешно удален из заданий."
+                    bot.send_message(chat_id=user_id, text=text)
+                    admin_states[user_id] = None  # Reset the state
+                
+            if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_MESSAGE:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["broadcast_text"] = message.text
+                text = "Пришлите картинку для рассылки:"
+                bot.send_message(chat_id=user_id, text=text)
+                admin_states[user_id] = STATE_WAITING_FOR_BROADCAST_IMAGE
+                return
 
-    if user_id in link_wallet:
-        wallet = message.text
-        database.update_wallet(user_id=user_id, wallet=wallet)
-        text = 'Кошелек успешно привязан!'
-        bot.send_message(chat_id=user_id, text=text, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
-        link_wallet.remove(user_id)  # Remove user from the link_wallet set after processing
+            if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_IMAGE and message.content_type == 'photo':
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["broadcast_image_id"] = message.photo[-1].file_id
+                text = "Пришлите название кнопки для рассылки:"
+                bot.send_message(chat_id=user_id, text=text)
+                admin_states[user_id] = STATE_WAITING_FOR_BROADCAST_BUTTON_NAME
+                return
+
+            if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_BUTTON_NAME:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["broadcast_button_name"] = message.text
+                text = "Пришлите ссылку для кнопки:"
+                bot.send_message(chat_id=user_id, text=text)
+                admin_states[user_id] = STATE_WAITING_FOR_BROADCAST_BUTTON_LINK
+                return
+
+            if admin_states[user_id] == STATE_WAITING_FOR_BROADCAST_BUTTON_LINK:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["broadcast_button_link"] = message.text
+                text = "Рассылка успешно запущена. Вы получите сообщение по окончанию рассылки."
+                bot.send_message(chat_id=user_id, text=text)
+                broadcast_message(admin_id=user_id)
+                admin_states[user_id] = None  # Reset the state
+
+            if admin_states[user_id] == STATE_WAITING_FOR_USER_USERNAME_TO_INCREASE_BALANCE:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["username"] = message.text[1:]
+                text = "Отправьте число, на которое хотите увеличить баланс пользователя:"
+                bot.send_message(chat_id=user_id, text=text)
+                admin_states[user_id] = STATE_WAITING_FOR_NUMBER_TO_INCREASE_BALANCE
+                return
+
+            if admin_states[user_id] == STATE_WAITING_FOR_NUMBER_TO_INCREASE_BALANCE:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                try:
+                    admin_states_data[user_id]["number"] = float(message.text)
+                    text = "Баланс пользователя увеличен."
+                    admin_states[user_id] = None
+                    target_user_id = database.get_user_id_by_username(username=admin_states_data[user_id]["username"])
+                    database.increase_user_balance(user_id=target_user_id, number=admin_states_data[user_id]["number"])
+                    bot.send_message(chat_id=user_id, text=text)
+                except Exception as e:
+                    bot.send_message(chat_id=user_id, text="Ошибка: не удалось увеличить баланс пользователя.")
+                    print(e)
+                finally:
+                    admin_states[user_id] = None
+
+            if admin_states[user_id] == STATE_WAITING_FOR_USER_USERNAME_TO_DECREASE_BALANCE:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["username"] = message.text[1:]
+                text = "Отправьте число, на которое хотите уменьшить баланс пользователя:"
+                bot.send_message(chat_id=user_id, text=text)
+                admin_states[user_id] = STATE_WAITING_FOR_NUMBER_TO_DECREASE_BALANCE
+                return
+
+            if admin_states[user_id] == STATE_WAITING_FOR_NUMBER_TO_DECREASE_BALANCE:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                try:
+                    admin_states_data[user_id]["number"] = float(message.text)
+                    text = "Баланс пользователя уменьшен."
+                    admin_states[user_id] = None
+                    target_user_id = database.get_user_id_by_username(username=admin_states_data[user_id]["username"])
+                    database.decrease_user_balance(user_id=target_user_id, number=admin_states_data[user_id]["number"])
+                    bot.send_message(chat_id=user_id, text=text)
+                except Exception as e:
+                    bot.send_message(chat_id=user_id, text="Ошибка: не удалось уменьшить баланс пользователя.")
+                    print(e)
+                finally:
+                    admin_states[user_id] = None
+
+            if admin_states[user_id] == STATE_WAITING_FOR_USER_USERNAME_TO_GET_INFO:
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                id = int(database.get_user_id_by_username(message.text[1:]))
+                if database.is_user_in_db(user_id=id):
+                    data = database.get_user_info(user_id=user_id)
+                    user_id, balance, referrals, referrer, wallet, registration_date, language = data
+                    text = f"ID: {user_id}\nБаланс: {balance}\nКол-во рефералов: {referrals}\nРеферер: {referrer}\nКошелек: {wallet}\nПрисоединился: {registration_date}\nЯзык: {language}"
+                    bot.send_message(chat_id=user_id, text=text)
+                else:
+                    bot.send_message(chat_id=user_id, text="Пользователя с таким ID не существует.")
+
+                admin_states[user_id] = None
+
+            if admin_states[user_id] == STATE_WAITING_FOR_BUYER_USERNAME:
+                buyer_username = message.text
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                admin_states_data[user_id]["buyer_username"] = buyer_username
+                text = "Введите сумму в долларах (только число):"
+                bot.send_message(chat_id=user_id, text=text)
+                admin_states[user_id] = STATE_WAITING_FOR_BUYER_SUM
+                return
+            
+            if admin_states[user_id] == STATE_WAITING_FOR_BUYER_SUM:
+                buyer_sum = message.text
+                revenue = 0.2
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                try:
+                    admin_states_data[user_id]["buyer_sum"] = float(buyer_sum)
+                except Exception as e:
+                    bot.send_message(chat_id=user_id, text=e)
+                try:
+                    buyer_username = admin_states_data[user_id]["buyer_username"]
+                    buyer_id = database.get_user_id_by_username(username=buyer_username[1:])
+                    buyer_wallet = database.users_get(item="wallet", user_id=buyer_id)
+                    buyer_referrer_id = database.get_referrer_id(user_id=buyer_id)
+                    database.add_buyer_into_db(username=buyer_username, sum=buyer_sum, wallet=buyer_wallet)
+                    database.reward_buyer_referrer(referrer_id=buyer_referrer_id, amount=float(buyer_sum) * revenue)
+                    text = "Покупатель добавлен успешно."
+                    bot.send_message(chat_id=user_id, text=text)
+                    return
+                except Exception as e:
+                    print("there")
+                    print(e)
+                finally:
+                    admin_states[user_id] = None
+
+        if user_id in link_wallet:
+            wallet = message.text
+            database.update_wallet(user_id=user_id, wallet=wallet)
+            text = 'Кошелек успешно привязан!'
+            bot.send_message(chat_id=user_id, text=text, reply_markup=USER_MARKUP if language == "ru" else USER_MARKUP_EN)
+            link_wallet.remove(user_id)  # Remove user from the link_wallet set after processing
+
+    except Exception as e:
+        print("here")
+        print(e)
 
 
+def start_bot():
+    while True:
+        try:
+            bot.polling(none_stop=True)
+        except Exception as e:
+            print("An unhabdled exception in polling loop occcured: ")
+            traceback.print_exc()
 
 if __name__ == "__main__":
     database.init_db()

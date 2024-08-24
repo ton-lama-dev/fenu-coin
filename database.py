@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime
 
 import config
+from main import get_username_by_id
 
 
 def connect_db():
@@ -13,7 +14,9 @@ def init_db():
         cursor = conn.cursor()
         cursor.execute(f"""CREATE TABLE IF NOT EXISTS users(
                        id INTEGER PRIMARY KEY,
+                       username TEXT,
                        balance INTEGER DEFAULT {config.WELCOME_BONUS},
+                       buyers_balance INTEGER DEFAULT 0,
                        referrals INTEGER DEFAULT 0,
                        referrer INTEGER,
                        wallet TEXT DEFAULT 'не подключен',
@@ -27,6 +30,14 @@ def init_db():
                        done_times INTEGER DEFAULT 0,
                        reward INTEGER DEFAULT 100)
                        """)
+        cursor.execute("""CREATE TABLE IF NOT EXISTS buyers(
+                       username TEXT,
+                       wallet TEXT,
+                       sum INTEGER)""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS withdrawal_requests(
+                       username TEXT,
+                       amount INTEGER,
+                       wallet TEXT)""")
         conn.commit()
 
 
@@ -51,7 +62,9 @@ def remove_channel_from_db(public_link):
         cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS users_new(
             id INTEGER PRIMARY KEY,
+            username TEXT,
             balance INTEGER DEFAULT {config.WELCOME_BONUS},
+            buyers_balance INTEGER DEFAULT 0,
             referrals INTEGER DEFAULT 0,
             referrer INTEGER,
             wallet TEXT DEFAULT 'не подключен',
@@ -97,12 +110,21 @@ def increase_task_done_times(public_link):
 def increase_user_balance(user_id, number):
     with connect_db() as conn:
         cursor = conn.cursor()
-        print("user_id: " + user_id)
-        print("number: " + number)
         cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id, ))
         current_balance = cursor.fetchone()[0]
-        new_balance = current_balance + int(number)
+        new_balance = current_balance + float(number)
         cursor.execute(f"UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
+        conn.commit()
+
+
+def decrease_user_balance(user_id, number):
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id, ))
+        current_balance = cursor.fetchone()[0]
+        new_balance = current_balance - float(number)
+        cursor.execute(f"UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
+        conn.commit()
 
 
 def reward_user_for_subscription(user_id: int, reward: int):
@@ -111,6 +133,31 @@ def reward_user_for_subscription(user_id: int, reward: int):
         cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id, ))
         new_balance = int(cursor.fetchone()[0]) + reward
         cursor.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
+        conn.commit()
+
+
+def reward_buyer_referrer(referrer_id: int, amount: int):
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT buyers_balance FROM users WHERE id = ?", (referrer_id, ))
+        data = cursor.fetchone()
+        new_balance = float(data[0]) + amount
+        cursor.execute("UPDATE users SET buyers_balance = ? WHERE id = ?", (new_balance, referrer_id))
+        conn.commit()
+
+
+def create_withdrawal_request(user_id: float):
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        username = get_username_by_id(user_id)
+        amount = round(float(users_get(item="buyers_balance", user_id=user_id)), 2)
+        if amount <= 0:
+            raise Exception("Not enough funds")
+        wallet = get_wallet(user_id=user_id)
+        cursor.execute("INSERT INTO withdrawal_requests (username, amount, wallet) VALUES (?, ?, ?)", (username, amount, wallet))
+
+        cursor.execute("UPDATE users SET buyers_balance = 0 WHERE id = ?", (user_id, ))
+        conn.commit()
 
 
 def increase_referrals(user_id):
@@ -131,7 +178,7 @@ def send_reward_to_referrer(referrer_id):
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT balance FROM users WHERE id = ?", (referrer_id, ))
-        new_balance = int(cursor.fetchone()[0]) + config.REFERRAL_REWARD
+        new_balance = float(cursor.fetchone()[0]) + config.REFERRAL_REWARD
         cursor.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, referrer_id))
 
 
@@ -150,34 +197,36 @@ def get_available_tasks(user_id) -> dict:
         cursor.execute("PRAGMA table_info(users)")
         columns_info = cursor.fetchall()
         
-        standard_columns = {'id', 'balance', 'referrer_id', 'referrals', 'wallet'}
+        standard_columns = {'id', 'balance', 'referrer_id', 'referrals', 'wallet', "username", "buyers_balance", "last_claim", "registration_date", "language"}
         task_columns = [info[1] for info in columns_info if info[1] not in standard_columns]
-        
-        cursor.execute(f"SELECT {', '.join(task_columns)} FROM users WHERE id = ?", (user_id,))
-        user_data = cursor.fetchone()
-        
-        available_tasks = [task for task, value in zip(task_columns, user_data) if value == 0]
+        if task_columns:
+            cursor.execute(f"SELECT {', '.join(task_columns)} FROM users WHERE id = ?", (user_id,))
+            user_data = cursor.fetchone()
+            
+            available_tasks = [task for task, value in zip(task_columns, user_data) if value == 0]
 
-        available_tasks_links = []
-        for task in available_tasks:
-            with connect_db() as conn:
-                cursor = conn.cursor()
-                task = "@" + task
-                cursor.execute("SELECT private_link FROM channels WHERE public_link = ?", (task, ))
-                task_link = cursor.fetchone()[0]
-                available_tasks_links.append(task_link)
-        
-        return dict(zip(available_tasks, available_tasks_links))
+            if available_tasks:
+                available_tasks_links = []
+                for task in available_tasks:
+                    with connect_db() as conn:
+                        cursor = conn.cursor()
+                        task = "@" + task
+                        cursor.execute("SELECT private_link FROM channels WHERE public_link = ?", (task, ))
+                        task_link = cursor.fetchone()[0]
+                        available_tasks_links.append(task_link)
+                
+                return dict(zip(available_tasks, available_tasks_links))
+            else:
+                return {}
+        else:
+            return {}
 
 
 def get_reward(public_link: str) -> int:
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT reward FROM channels WHERE public_link = ?", (public_link, ))
-        print(public_link)
         result = cursor.fetchone()
-        print(result)
-        print(result[0])
         return result[0]
 
 
@@ -205,10 +254,17 @@ def claim_reward(user_id):
         cursor.execute("UPDATE users SET balance = ?, last_claim = ? WHERE id = ?", (new_balance, current_time, user_id))
 
 
-def add_user_into_db(user_id, language, referrer=None):
+def add_user_into_db(user_id, language, username, referrer=None):
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (id, language, referrer) VALUES (?, ?, ?)", (user_id, language, referrer))
+        cursor.execute("INSERT INTO users (id, language, username, referrer) VALUES (?, ?, ?, ?)", (user_id, language, username, referrer))
+        conn.commit()
+
+
+def add_buyer_into_db(username: str, sum, wallet=None) -> None:
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO buyers (username, sum, wallet) VALUES (?, ?, ?)", (username, sum, wallet))
         conn.commit()
 
 
@@ -235,6 +291,38 @@ def get_wallet(user_id):
         return result[0] if result else None
     
 
+def get_referrals_ids(user_id: int) -> list:
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE referrer = ?", (user_id, ))
+        data = cursor.fetchall()
+        result = [i[0] for i in data]
+        return result if data else None
+
+
+def get_referrals_usernames(referrals_ids: list) -> list:
+    if referrals_ids:
+        usernames = [get_username_by_id(id) for id in referrals_ids]
+        return usernames if usernames else None
+    else:
+        return []
+
+
+def get_buyers_referrals_sums(usernames: list) -> list[tuple]:
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        result = list()
+        for username in usernames:
+            cursor.execute("SELECT sum FROM buyers WHERE username = ?", (username, ))
+            data = cursor.fetchone()
+            if data:
+                num = float(data)
+                result.append(num)
+            else:
+                result.append(0)
+        return result if result else None
+
+
 def get_referrals(user_id):
     with connect_db() as conn:
         cursor = conn.cursor()
@@ -242,6 +330,14 @@ def get_referrals(user_id):
         result = cursor.fetchone()
         return result[0] if result else None
     
+
+def get_referrer_id(user_id: int) -> int:
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT referrer FROM users WHERE id = ?", (user_id,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+
 
 def get_balance(user_id):
     with connect_db() as conn:
@@ -265,6 +361,14 @@ def get_number_of_users():
         cursor.execute("SELECT COUNT(*) FROM users")
         count = cursor.fetchone()[0]
         return count
+
+
+def get_withdrawal_requests_data() -> list[tuple]:
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM withdrawal_requests")
+        result = cursor.fetchall()
+        return result if result else None
 
 
 def get_all_users() -> list:
@@ -316,6 +420,15 @@ def get_all_balances() -> list:
         return result
     
 
+def get_all_buyers() -> list:
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM buyers")
+    buyers = cursor.fetchall()
+    conn.close()
+    return buyers
+
+
 def get_user_info(user_id):
     with connect_db() as conn:
         cursor = conn.cursor()
@@ -325,8 +438,31 @@ def get_user_info(user_id):
         return row
 
 
+def get_user_id_by_username(username: str) -> int:
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE username = ?", (username, ))
+        result = cursor.fetchone()
+        if result != None:
+            return result[0]
+        else:
+            return None
+
+
+
 def users_set(user_id: int, item: str, value):
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute(f"UPDATE users SET {item} = ? WHERE id = ?", (value, user_id))
         conn.commit()
+
+
+def users_get(item: str, user_id: int):
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT {item} FROM users WHERE id = ?", (user_id, ))
+        result = cursor.fetchone()
+        if result != None:
+            return result[0]
+        else:
+            return None
