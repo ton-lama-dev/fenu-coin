@@ -752,9 +752,9 @@ def handle_admin_message(message: types.Message):
                     admin_states_data[user_id] = {}
                 id = int(database.get_user_id_by_username(message.text[1:]))
                 if database.is_user_in_db(user_id=id):
-                    data = database.get_user_info(user_id=user_id)
-                    user_id, balance, referrals, referrer, wallet, registration_date, language = data
-                    text = f"ID: {user_id}\nБаланс: {balance}\nКол-во рефералов: {referrals}\nРеферер: {referrer}\nКошелек: {wallet}\nПрисоединился: {registration_date}\nЯзык: {language}"
+                    data = database.get_user_info(user_id=id)
+                    usr_id, balance, referrals, referrer, wallet, registration_date, language = data
+                    text = f"ID: {usr_id}\nБаланс: {balance}\nКол-во рефералов: {referrals}\nРеферер: {referrer}\nКошелек: {wallet}\nПрисоединился: {registration_date}\nЯзык: {language}"
                     bot.send_message(chat_id=user_id, text=text)
                 else:
                     bot.send_message(chat_id=user_id, text="Пользователя с таким ID не существует.")
