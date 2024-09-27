@@ -450,7 +450,6 @@ def get_user_id_by_username(username: str) -> int:
             return None
 
 
-
 def users_set(user_id: int, item: str, value):
     with connect_db() as conn:
         cursor = conn.cursor()
@@ -467,3 +466,15 @@ def users_get(item: str, user_id: int):
             return result[0]
         else:
             return None
+
+
+def users_increase(user_id: int, item: str, value: int):
+    with connect_db() as conn:
+        try:
+            old_value = int(users_get(item=item, user_id=user_id))
+            new_value = old_value + int(value)
+            cursor = conn.cursor()
+            cursor.execute(f"UPDATE users SET {item} = ? WHERE id = ?", (new_value, user_id))
+            conn.commit()
+        except Exception as e:
+            print(e)

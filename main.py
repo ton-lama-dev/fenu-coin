@@ -283,12 +283,13 @@ def cmd_balance(message: types.Message):
     language = database.get_language(user_id=user_id)
     image = open(f"images/img.jpg", "rb")
     balance = database.get_balance(user_id=user_id)
+    paid_balance = database.users_get(item="paid_balance", user_id=user_id)
     referrals = database.get_referrals(user_id=user_id)
     referral_link = "https://t.me/Fehucoin_bot?start=" + str(user_id)
     markup = types.InlineKeyboardMarkup()
     button = types.InlineKeyboardButton(text='Пригласить друзей' if language == 'ru' else "Invite friends", switch_inline_query=referral_link)
     markup.add(button)
-    caption = f"Ваш баланс: {balance} {config.COIN_NAME}\n\nКоличество рефералов: {referrals}\n\nНаграда за 1 реферала: {config.REFERRAL_REWARD} {config.COIN_NAME}\n\nВаша реферальная ссылка: {referral_link}" if language == 'ru' else f"Your balance: {balance} {config.COIN_NAME}\n\nReferrals: {referrals}\n\nReward for 1 referral: {config.REFERRAL_REWARD} {config.COIN_NAME}\n\nYour referral link: {referral_link}"
+    caption = f"Ваш баланс: {balance} {config.COIN_NAME}\nПлатный баланс: {paid_balance} {config.COIN_NAME}\n\nКоличество рефералов: {referrals}\n\nНаграда за 1 реферала: {config.REFERRAL_REWARD} {config.COIN_NAME}\n\nВаша реферальная ссылка: {referral_link}" if language == 'ru' else f"Your balance: {balance} {config.COIN_NAME}\nPaid balance: {paid_balance} {config.COIN_NAME}\n\nReferrals: {referrals}\n\nReward for 1 referral: {config.REFERRAL_REWARD} {config.COIN_NAME}\n\nYour referral link: {referral_link}"
     bot.send_photo(chat_id=user_id, photo=image, caption=caption, reply_markup=markup)
 
 
@@ -771,7 +772,7 @@ def handle_admin_message(message: types.Message):
                 return
             
             if admin_states[user_id] == STATE_WAITING_FOR_BUYER_SUM:
-                buyer_sum = message.text
+                buyer_sum = int(message.text)
                 revenue = 0.2
                 if user_id not in admin_states_data:
                     admin_states_data[user_id] = {}
@@ -785,6 +786,7 @@ def handle_admin_message(message: types.Message):
                     buyer_wallet = database.users_get(item="wallet", user_id=buyer_id)
                     buyer_referrer_id = database.get_referrer_id(user_id=buyer_id)
                     database.add_buyer_into_db(username=buyer_username, sum=buyer_sum, wallet=buyer_wallet)
+                    database.users_increase(item="paid_balance", user_id=buyer_id, value=buyer_sum)
                     database.reward_buyer_referrer(referrer_id=buyer_referrer_id, amount=float(buyer_sum) * revenue)
                     text = "Покупатель добавлен успешно."
                     bot.send_message(chat_id=user_id, text=text)
