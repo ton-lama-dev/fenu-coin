@@ -513,7 +513,6 @@ def callback_admin_tasks(call):
         text += f"\n{public_link}: {times_done}"
     bot.send_message(chat_id=user_id, text=text)
 
-
 def broadcast_message(admin_id):
     user_ids = database.get_all_users()
     language = database.get_language(user_id=admin_id)

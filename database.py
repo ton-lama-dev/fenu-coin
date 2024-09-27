@@ -17,6 +17,7 @@ def init_db():
                        username TEXT,
                        balance INTEGER DEFAULT {config.WELCOME_BONUS},
                        buyers_balance INTEGER DEFAULT 0,
+                       paid_balance INTEGER DEFAULT 0,
                        referrals INTEGER DEFAULT 0,
                        referrer INTEGER,
                        wallet TEXT DEFAULT 'не подключен',
