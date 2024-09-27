@@ -44,6 +44,7 @@ STATE_WAITING_FOR_NUMBER_TO_INCREASE_BALANCE = "waiting_for_number_to_increase_b
 STATE_WAITING_FOR_NUMBER_TO_DECREASE_BALANCE = "waiting_for_number_to_decrease_balance"
 STATE_WAITING_FOR_BUYER_USERNAME = "waiting_for_buyer_username"
 STATE_WAITING_FOR_BUYER_SUM = "waiting_for_buyer_sum"
+STATE_WAITING_FOR_TOKEN_PRICE = "waiting_for_token_price"
 
 
 def is_subscribed_default(user_id):
@@ -436,7 +437,9 @@ def cmd_admin_panel(message: types.Message):
     add_buyer_button = InlineKeyboardButton("Добавить покупателя ➕", callback_data="admin_add_buyer")
     buyers_button = InlineKeyboardButton("Список покупателей 💰", callback_data="admin_buyers")
     withdrawal_requests_button = InlineKeyboardButton("Заявки на вывод 💵", callback_data="admin_withdrawal_requests")
-    inline_markup.add(users_button, statistics_button, tasks_button, broadcast_button, add_buyer_button, buyers_button, withdrawal_requests_button)
+    change_token_price_button = InlineKeyboardButton("Изменить цену токена", callback_data="admin_change_token_price")
+    inline_markup.add(users_button, statistics_button, tasks_button, broadcast_button, add_buyer_button,
+                      buyers_button, withdrawal_requests_button, change_token_price_button)
     bot.send_message(chat_id=user_id, text="Панель администратора", reply_markup=inline_markup)
 
 
@@ -594,6 +597,14 @@ def callback_admin_withdrawal_requests(call):
         return
     for request in data:
         text += f"Никнейм: {request[0]} Сумма: ${request[1]} Кошелек: {request[2]}\n"
+    bot.send_message(chat_id=user_id, text=text)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_change_token_price")
+def callback_admin_change_token_price(call):
+    user_id = call.from_user.id
+    admin_states[user_id] = STATE_WAITING_FOR_TOKEN_PRICE
+    text = "Введите новую цену токена:"
     bot.send_message(chat_id=user_id, text=text)
 
 
@@ -797,6 +808,16 @@ def handle_admin_message(message: types.Message):
                     print(e)
                 finally:
                     admin_states[user_id] = None
+
+            if admin_states[user_id] == STATE_WAITING_FOR_TOKEN_PRICE:
+                new_price = int(message.text)
+                if user_id not in admin_states_data:
+                    admin_states_data[user_id] = {}
+                config.TOKEN_PRICE = new_price
+                admin_states[user_id] = None
+                text = "Цена токена изменена успешно."
+                bot.send_message(chat_id=user_id, text=text)
+                return
 
         if user_id in link_wallet:
             wallet = message.text
