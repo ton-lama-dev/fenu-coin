@@ -787,7 +787,8 @@ def handle_admin_message(message: types.Message):
                     buyer_referrer_id = database.get_referrer_id(user_id=buyer_id)
                     database.add_buyer_into_db(username=buyer_username, sum=buyer_sum, wallet=buyer_wallet)
                     database.users_increase(item="paid_balance", user_id=buyer_id, value=buyer_sum)
-                    database.reward_buyer_referrer(referrer_id=buyer_referrer_id, amount=float(buyer_sum) * revenue)
+                    if database.get_referrer_id(user_id=user_id) != None:
+                        database.reward_buyer_referrer(referrer_id=buyer_referrer_id, amount=float(buyer_sum) * revenue)
                     text = "Покупатель добавлен успешно."
                     bot.send_message(chat_id=user_id, text=text)
                     return
