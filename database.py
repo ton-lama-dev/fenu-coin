@@ -198,7 +198,19 @@ def get_available_tasks(user_id) -> dict:
         cursor.execute("PRAGMA table_info(users)")
         columns_info = cursor.fetchall()
         
-        standard_columns = {'id', 'balance', 'referrer_id', 'referrals', 'wallet', "username", "buyers_balance", "last_claim", "registration_date", "language"}
+        standard_columns = {
+            "id",
+            "username",
+            "balance",
+            "buyers_balance",
+            "referrals",
+            "referrer",
+            "wallet",
+            "last_claim",
+            "registration_date",
+            "language",
+            "paid_balance",
+        }
         task_columns = [info[1] for info in columns_info if info[1] not in standard_columns]
         if task_columns:
             cursor.execute(f"SELECT {', '.join(task_columns)} FROM users WHERE id = ?", (user_id,))
